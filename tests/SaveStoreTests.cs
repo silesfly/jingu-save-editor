@@ -184,7 +184,7 @@ namespace JinGuSaveEditor.Tests
                     AssertThrows(delegate { SaveStore.SaveWithBackup(t10Path, oldBytes, oldHash); }, "Stale expectedSha256 should be rejected.");
                 });
 
-                RunTest("11. SaveWithBackup blocks concurrent writer on existing file via exclusive lock in afterLockHook", delegate
+                RunTest("11. SaveWithBackup holds unbroken TxF lock blocking concurrent writers in both afterLockHook and beforeCommitHook", delegate
                 {
                     byte[] origBytes = BuildMinimalValidSaveBytes(200);
                     string origHash = ComputeSha256Hex(origBytes);
@@ -192,7 +192,8 @@ namespace JinGuSaveEditor.Tests
                     File.WriteAllBytes(t11Path, origBytes);
 
                     byte[] newBytes = BuildMinimalValidSaveBytes(300);
-                    bool concurrentBlocked = false;
+                    bool concurrentBlockedAfterLock = false;
+                    bool concurrentBlockedBeforeCommit = false;
 
                     Action afterLockHook = delegate
                     {
@@ -205,13 +206,29 @@ namespace JinGuSaveEditor.Tests
                         }
                         catch (IOException)
                         {
-                            concurrentBlocked = true;
+                            concurrentBlockedAfterLock = true;
                         }
                     };
 
-                    SaveStore.SaveWithBackup(t11Path, newBytes, origHash, afterLockHook, null);
+                    Action beforeCommitHook = delegate
+                    {
+                        try
+                        {
+                            using (FileStream fs = File.Open(t11Path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+                            {
+                                fs.WriteByte(0);
+                            }
+                        }
+                        catch (IOException)
+                        {
+                            concurrentBlockedBeforeCommit = true;
+                        }
+                    };
 
-                    Assert(concurrentBlocked, "Concurrent writer was not blocked while SaveWithBackup held lock.");
+                    SaveStore.SaveWithBackup(t11Path, newBytes, origHash, afterLockHook, beforeCommitHook);
+
+                    Assert(concurrentBlockedAfterLock, "Concurrent writer was not blocked during afterLockHook.");
+                    Assert(concurrentBlockedBeforeCommit, "Concurrent writer was not blocked during beforeCommitHook after handle close.");
                     Assert(string.Equals(ComputeSha256Hex(File.ReadAllBytes(t11Path)), ComputeSha256Hex(newBytes), StringComparison.OrdinalIgnoreCase), "New bytes not committed.");
 
                     string[] backups = Directory.GetFiles(tempDir, "t11.bytes.backup-*.bak");

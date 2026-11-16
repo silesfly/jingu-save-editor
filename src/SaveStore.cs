@@ -57,8 +57,10 @@ namespace JinGuSaveEditor
 
         private static class NativeMethods
         {
+            internal const uint GENERIC_READ = 0x80000000;
             internal const uint GENERIC_WRITE = 0x40000000;
             internal const uint CREATE_NEW = 1;
+            internal const uint OPEN_EXISTING = 3;
             internal const uint FILE_ATTRIBUTE_NORMAL = 0x00000080;
             internal const uint FILE_FLAG_WRITE_THROUGH = 0x80000000;
             internal const uint MOVEFILE_REPLACE_EXISTING = 0x00000001;
@@ -663,39 +665,78 @@ namespace JinGuSaveEditor
             string guid8 = Guid.NewGuid().ToString("N").Substring(0, 8);
             string pendingPath = fullPath + ".pending-" + guid8;
             string backupPath = null;
-
-            FileStream targetLockStream = null;
-            SafeTransactionHandle tx = null;
             bool committed = false;
+
+            SafeTransactionHandle tx = NativeMethods.CreateTransaction(
+                IntPtr.Zero,
+                IntPtr.Zero,
+                0,
+                0,
+                0,
+                0,
+                "JinGuSaveEditor");
+
+            if (tx == null || tx.IsInvalid)
+            {
+                int err = Marshal.GetLastWin32Error();
+                if (tx != null)
+                {
+                    tx.Dispose();
+                }
+                throw new IOException("파일 시스템 트랜잭션을 시작할 수 없습니다.", new Win32Exception(err));
+            }
 
             try
             {
                 bool targetInitiallyExisted = File.Exists(fullPath);
                 if (targetInitiallyExisted)
                 {
-                    targetLockStream = new FileStream(fullPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None);
+                    SafeFileHandle targetHandle = NativeMethods.CreateFileTransacted(
+                        fullPath,
+                        NativeMethods.GENERIC_READ | NativeMethods.GENERIC_WRITE,
+                        0,
+                        IntPtr.Zero,
+                        NativeMethods.OPEN_EXISTING,
+                        NativeMethods.FILE_ATTRIBUTE_NORMAL,
+                        IntPtr.Zero,
+                        tx,
+                        IntPtr.Zero,
+                        IntPtr.Zero);
 
-                    byte[] existingBytes = ReadAllFromLockedStream(targetLockStream);
-                    if (!string.IsNullOrEmpty(expectedSha256))
+                    if (targetHandle == null || targetHandle.IsInvalid)
                     {
-                        string actualHash = Hash(existingBytes);
-                        if (!string.Equals(actualHash, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                        int err = Marshal.GetLastWin32Error();
+                        if (targetHandle != null)
                         {
-                            throw new IOException("대상 파일이 외부에서 변경되어 저장을 중단했습니다.");
+                            targetHandle.Dispose();
                         }
+                        throw new IOException("대상 파일을 트랜잭션 잠금으로 열 수 없습니다.", new Win32Exception(err));
                     }
 
-                    if (afterLockHook != null)
+                    using (FileStream targetStream = new FileStream(targetHandle, FileAccess.ReadWrite))
                     {
-                        afterLockHook();
-                    }
+                        byte[] existingBytes = ReadAllFromLockedStream(targetStream);
+                        if (!string.IsNullOrEmpty(expectedSha256))
+                        {
+                            string actualHash = Hash(existingBytes);
+                            if (!string.Equals(actualHash, expectedSha256, StringComparison.OrdinalIgnoreCase))
+                            {
+                                throw new IOException("대상 파일이 외부에서 변경되어 저장을 중단했습니다.");
+                            }
+                        }
 
-                    string timestamp = DateTime.Now.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
-                    backupPath = string.Format(CultureInfo.InvariantCulture, "{0}.backup-{1}-{2}.bak", fullPath, timestamp, guid8);
-                    using (FileStream backupStream = new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                    {
-                        backupStream.Write(existingBytes, 0, existingBytes.Length);
-                        backupStream.Flush(true);
+                        if (afterLockHook != null)
+                        {
+                            afterLockHook();
+                        }
+
+                        string timestamp = DateTime.Now.ToString("yyyyMMddHHmmssfff", CultureInfo.InvariantCulture);
+                        backupPath = string.Format(CultureInfo.InvariantCulture, "{0}.backup-{1}-{2}.bak", fullPath, timestamp, guid8);
+                        using (FileStream backupStream = new FileStream(backupPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                        {
+                            backupStream.Write(existingBytes, 0, existingBytes.Length);
+                            backupStream.Flush(true);
+                        }
                     }
                 }
                 else
@@ -709,21 +750,6 @@ namespace JinGuSaveEditor
                     {
                         afterLockHook();
                     }
-                }
-
-                tx = NativeMethods.CreateTransaction(
-                    IntPtr.Zero,
-                    IntPtr.Zero,
-                    0,
-                    0,
-                    0,
-                    0,
-                    "JinGuSaveEditor");
-
-                if (tx == null || tx.IsInvalid)
-                {
-                    int err = Marshal.GetLastWin32Error();
-                    throw new IOException("파일 시스템 트랜잭션을 시작할 수 없습니다.", new Win32Exception(err));
                 }
 
                 SafeFileHandle pendingHandle = NativeMethods.CreateFileTransacted(
@@ -759,12 +785,6 @@ namespace JinGuSaveEditor
                     beforeCommitHook();
                 }
 
-                if (targetLockStream != null)
-                {
-                    targetLockStream.Dispose();
-                    targetLockStream = null;
-                }
-
                 uint moveFlags = NativeMethods.MOVEFILE_WRITE_THROUGH;
                 if (targetInitiallyExisted)
                 {
@@ -792,17 +812,6 @@ namespace JinGuSaveEditor
             }
             finally
             {
-                if (targetLockStream != null)
-                {
-                    try
-                    {
-                        targetLockStream.Dispose();
-                    }
-                    catch
-                    {
-                    }
-                }
-
                 if (!committed)
                 {
                     if (tx != null && !tx.IsInvalid)
@@ -819,10 +828,7 @@ namespace JinGuSaveEditor
                     TryDeletePendingFile(pendingPath);
                 }
 
-                if (tx != null)
-                {
-                    tx.Dispose();
-                }
+                tx.Dispose();
             }
         }
 
