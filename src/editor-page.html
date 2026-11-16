@@ -1,0 +1,809 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>금고군협전 세이브 에디터 v1.0</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --bg: #f4efe4;
+      --bg-elevated: #fbf8f1;
+      --bg-muted: #ebe3d3;
+      --bg-table-head: #e6dcc8;
+      --surface-hover: #efe7d8;
+      --ink: #221d17;
+      --ink-muted: #5f5548;
+      --ink-subtle: #7e7262;
+      --border: #d2c5ae;
+      --border-strong: #b39f80;
+      --accent: #8f2d1e;
+      --accent-hover: #732215;
+      --accent-soft: rgba(143, 45, 30, 0.12);
+      --gold: #8a641c;
+      --gold-soft: rgba(138, 100, 28, 0.14);
+      --ok: #26643a;
+      --ok-soft: rgba(38, 100, 58, 0.13);
+      --warn: #8c5a12;
+      --warn-soft: rgba(140, 90, 18, 0.14);
+      --danger: #a32626;
+      --danger-soft: rgba(163, 38, 38, 0.13);
+      --shadow: 0 2px 10px rgba(34, 29, 23, 0.08);
+      --radius: 10px;
+      --radius-sm: 6px;
+      --font-sans: "Pretendard", "Noto Sans KR", "Malgun Gothic", "Apple SD Gothic Neo", system-ui, -apple-system, sans-serif;
+      --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        --bg: #171411;
+        --bg-elevated: #211d18;
+        --bg-muted: #2a241d;
+        --bg-table-head: #2f2820;
+        --surface-hover: #352d24;
+        --ink: #efe9de;
+        --ink-muted: #bfb4a2;
+        --ink-subtle: #968977;
+        --border: #3d342a;
+        --border-strong: #5c4e3e;
+        --accent: #d96b52;
+        --accent-hover: #e48069;
+        --accent-soft: rgba(217, 107, 82, 0.18);
+        --gold: #d6a74f;
+        --gold-soft: rgba(214, 167, 79, 0.18);
+        --ok: #59b676;
+        --ok-soft: rgba(89, 182, 118, 0.18);
+        --warn: #e0a34b;
+        --warn-soft: rgba(224, 163, 75, 0.18);
+        --danger: #e46969;
+        --danger-soft: rgba(228, 105, 105, 0.18);
+        --shadow: 0 4px 16px rgba(0, 0, 0, 0.42);
+      }
+    }
+
+    [data-theme="dark"] {
+      --bg: #171411;
+      --bg-elevated: #211d18;
+      --bg-muted: #2a241d;
+      --bg-table-head: #2f2820;
+      --surface-hover: #352d24;
+      --ink: #efe9de;
+      --ink-muted: #bfb4a2;
+      --ink-subtle: #968977;
+      --border: #3d342a;
+      --border-strong: #5c4e3e;
+      --accent: #d96b52;
+      --accent-hover: #e48069;
+      --accent-soft: rgba(217, 107, 82, 0.18);
+      --gold: #d6a74f;
+      --gold-soft: rgba(214, 167, 79, 0.18);
+      --ok: #59b676;
+      --ok-soft: rgba(89, 182, 118, 0.18);
+      --warn: #e0a34b;
+      --warn-soft: rgba(224, 163, 75, 0.18);
+      --danger: #e46969;
+      --danger-soft: rgba(228, 105, 105, 0.18);
+      --shadow: 0 4px 16px rgba(0, 0, 0, 0.42);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html {
+      font-size: 15px;
+      -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100dvh;
+      font-family: var(--font-sans);
+      background-color: var(--bg);
+      color: var(--ink);
+      line-height: 1.5;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    :focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+
+    .app-shell {
+      max-width: 1360px;
+      margin: 0 auto;
+      padding: 16px 20px 48px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    /* Header */
+    .top-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 14px 18px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .brand-group {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .app-title {
+      margin: 0;
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--ink);
+    }
+
+    .header-meta {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--bg-muted);
+      color: var(--ink-muted);
+      white-space: nowrap;
+    }
+
+    .badge-accent {
+      background: var(--accent-soft);
+      border-color: transparent;
+      color: var(--accent);
+    }
+
+    .badge-gold {
+      background: var(--gold-soft);
+      border-color: transparent;
+      color: var(--gold);
+    }
+
+    .badge-ok {
+      background: var(--ok-soft);
+      border-color: transparent;
+      color: var(--ok);
+    }
+
+    .badge-warn {
+      background: var(--warn-soft);
+      border-color: transparent;
+      color: var(--warn);
+    }
+
+    .badge-danger {
+      background: var(--danger-soft);
+      border-color: transparent;
+      color: var(--danger);
+    }
+
+    /* Buttons & Inputs */
+    button,
+    input,
+    select,
+    textarea {
+      font-family: inherit;
+      font-size: 0.9rem;
+      color: var(--ink);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 13px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      color: var(--ink);
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+      white-space: nowrap;
+    }
+
+    .btn:hover:not(:disabled) {
+      background: var(--surface-hover);
+      border-color: var(--accent);
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      background: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
+
+    .btn-subtle {
+      background: var(--bg-muted);
+      border-color: var(--border);
+    }
+
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 0.82rem;
+    }
+
+    .btn-danger {
+      color: var(--danger);
+      border-color: var(--danger);
+      background: transparent;
+    }
+
+    .btn-danger:hover:not(:disabled) {
+      background: var(--danger-soft);
+    }
+
+    input[type="text"],
+    input[type="number"],
+    input[type="search"],
+    select,
+    textarea {
+      padding: 6px 10px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border-strong);
+      background: var(--bg-elevated);
+      color: var(--ink);
+      min-width: 0;
+    }
+
+    input[type="number"] {
+      font-variant-numeric: tabular-nums;
+    }
+
+    input[type="file"] {
+      font-size: 0.85rem;
+      padding: 4px 8px;
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+      max-width: 100%;
+    }
+
+    /* Save Bar */
+    .save-bar {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px 16px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .control-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .control-label {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--ink-muted);
+      margin-right: 4px;
+    }
+
+    /* Status Bar */
+    .status-bar {
+      padding: 9px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      background: var(--bg-muted);
+      color: var(--ink);
+      font-size: 0.88rem;
+      min-height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .status-bar[data-tone="ok"] {
+      background: var(--ok-soft);
+      border-color: var(--ok);
+      color: var(--ok);
+    }
+
+    .status-bar[data-tone="warn"] {
+      background: var(--warn-soft);
+      border-color: var(--warn);
+      color: var(--warn);
+    }
+
+    .status-bar[data-tone="error"] {
+      background: var(--danger-soft);
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    /* Empty State */
+    .empty-state {
+      padding: 48px 24px;
+      text-align: center;
+      background: var(--bg-elevated);
+      border: 1px dashed var(--border-strong);
+      border-radius: var(--radius);
+      color: var(--ink-muted);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .empty-state h2 {
+      margin: 0;
+      font-size: 1.15rem;
+      color: var(--ink);
+    }
+
+    .empty-state p {
+      margin: 0;
+      max-width: 560px;
+      font-size: 0.92rem;
+    }
+
+    /* Workspace Bars */
+    .editor-workspace {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .toolbar-card {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 14px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+
+    .validation-bar {
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      font-size: 0.88rem;
+    }
+
+    .validation-bar:empty {
+      display: none;
+    }
+
+    .diff-box {
+      padding: 12px 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      font-size: 0.86rem;
+      font-family: var(--font-mono);
+      max-height: 240px;
+      overflow: auto;
+    }
+
+    .diff-box:empty {
+      display: none;
+    }
+
+    /* Accessible Tablist */
+    .tablist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      border-bottom: 2px solid var(--border);
+      padding: 0 4px;
+    }
+
+    .tablist [role="tab"] {
+      appearance: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      padding: 10px 15px;
+      background: transparent;
+      color: var(--ink-muted);
+      font-weight: 600;
+      font-size: 0.92rem;
+      cursor: pointer;
+      border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+      transition: color 0.14s ease, background-color 0.14s ease, border-color 0.14s ease;
+    }
+
+    .tablist [role="tab"]:hover {
+      color: var(--ink);
+      background: var(--bg-muted);
+    }
+
+    .tablist [role="tab"][aria-selected="true"] {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+      background: var(--bg-elevated);
+    }
+
+    .tab-panel {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px;
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Responsive Grids & Cards */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 14px;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 12px;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-title {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--ink);
+    }
+
+    .field-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px 12px;
+    }
+
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .field label {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--ink-muted);
+    }
+
+    .inline-check {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+
+    /* Sticky Header Table Wrapper */
+    .table-region {
+      position: relative;
+      max-height: 460px;
+      overflow: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg-elevated);
+    }
+
+    .table-region table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.86rem;
+    }
+
+    .table-region thead th {
+      position: sticky;
+      top: 0;
+      z-index: 2;
+      background: var(--bg-table-head);
+      color: var(--ink);
+      font-weight: 700;
+      text-align: left;
+      padding: 9px 10px;
+      border-bottom: 2px solid var(--border-strong);
+      white-space: nowrap;
+    }
+
+    .table-region tbody td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    .table-region tbody tr:hover {
+      background: var(--surface-hover);
+    }
+
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .mono {
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+    }
+
+    /* Native Modal Dialog */
+    dialog {
+      margin: auto;
+      width: min(680px, calc(100vw - 24px));
+      max-height: min(84dvh, 720px);
+      padding: 0;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius);
+      background: var(--bg-elevated);
+      color: var(--ink);
+      box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+    }
+
+    dialog:modal {
+      overscroll-behavior: contain;
+    }
+
+    dialog::backdrop {
+      background: rgba(15, 12, 9, 0.58);
+      overflow: hidden;
+      overscroll-behavior: contain;
+    }
+
+    .dialog-shell {
+      display: flex;
+      flex-direction: column;
+      max-height: min(84dvh, 720px);
+    }
+
+    .dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    .dialog-header h2 {
+      margin: 0;
+      font-size: 1.05rem;
+    }
+
+    .dialog-body {
+      padding: 14px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+      flex: 1 1 auto;
+    }
+
+    .picker-list {
+      overflow: auto;
+      flex: 1 1 auto;
+      min-height: 220px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--bg);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .picker-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      width: 100%;
+      padding: 9px 12px;
+      border: none;
+      border-bottom: 1px solid var(--border);
+      background: transparent;
+      color: var(--ink);
+      text-align: left;
+      cursor: pointer;
+    }
+
+    .picker-item:hover {
+      background: var(--surface-hover);
+    }
+
+    .dialog-footer {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      padding: 12px 16px;
+      border-top: 1px solid var(--border);
+      background: var(--bg);
+    }
+
+    @media (max-width: 720px) {
+      .app-shell {
+        padding: 10px 10px 36px;
+      }
+
+      .top-header {
+        padding: 12px;
+      }
+
+      .tab-panel {
+        padding: 12px;
+      }
+
+      .tablist [role="tab"] {
+        padding: 8px 10px;
+        font-size: 0.84rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <header class="top-header">
+      <div class="brand-group">
+        <h1 class="app-title">금고군협전 세이브 에디터 v1.0</h1>
+        <span id="file-badge" class="badge">파일 없음</span>
+        <span id="kind-badge" class="badge badge-gold">종류 미정</span>
+        <span id="dirty-badge" class="badge">변경 없음</span>
+      </div>
+      <div class="header-meta">
+        <button type="button" id="btn-theme" class="btn btn-subtle" aria-label="화면 테마 전환">테마 전환</button>
+      </div>
+    </header>
+
+    <section id="save-bar" class="save-bar" aria-label="세이브 파일 관리">
+      <div id="native-controls" class="control-row" hidden>
+        <span class="control-label">네이티브 연결</span>
+        <button type="button" id="btn-native-discover" class="btn btn-sm">세이브 폴더 탐색</button>
+        <select id="native-save-select" aria-label="발견된 네이티브 세이브 선택"></select>
+        <button type="button" id="btn-native-open" class="btn btn-sm">파일 열기</button>
+        <button type="button" id="btn-native-save" class="btn btn-sm btn-primary">바로 저장</button>
+        <button type="button" id="btn-native-save-as" class="btn btn-sm">다른 이름으로 저장</button>
+      </div>
+
+      <div id="server-controls" class="control-row" hidden>
+        <span class="control-label">로컬 서버</span>
+        <select id="server-save-select" aria-label="서버 세이브 목록 선택"></select>
+        <button type="button" id="btn-server-reload" class="btn btn-sm">목록 새로고침</button>
+        <button type="button" id="btn-server-load" class="btn btn-sm">불러오기</button>
+        <button type="button" id="btn-server-save" class="btn btn-sm btn-primary">서버에 저장</button>
+      </div>
+
+      <div id="browser-controls" class="control-row">
+        <span class="control-label">브라우저 파일</span>
+        <input type="file" id="file-input" accept=".bytes" aria-label="세이브 파일 업로드">
+        <button type="button" id="btn-load-demo" class="btn btn-sm">샘플 세이브 불러오기</button>
+        <button type="button" id="btn-load-demo-global" class="btn btn-sm">샘플 전역 설정 불러오기</button>
+        <button type="button" id="btn-download-save" class="btn btn-sm btn-primary" disabled>수정본 다운로드</button>
+      </div>
+    </section>
+
+    <div id="status-msg" class="status-bar" role="status" aria-live="polite">
+      세이브 파일(.bytes)을 불러오면 편집 화면이 열립니다.
+    </div>
+
+    <section id="empty-state" class="empty-state">
+      <h2>불러온 세이브 데이터가 없습니다</h2>
+      <p>
+        상단에서 게임 세이브 파일이나 전역 설정 파일을 선택하거나, 샘플 데이터를 불러와 구조를 바로 확인하고 편집할 수 있습니다.
+      </p>
+    </section>
+
+    <main id="editor-workspace" class="editor-workspace" hidden>
+      <div id="preset-bar" class="toolbar-card" aria-label="빠른 적용 프리셋"></div>
+      <div id="validation-bar" class="validation-bar" aria-live="polite"></div>
+      <div id="diff-box" class="diff-box" aria-label="변경 내역 비교"></div>
+
+      <div id="save-tablist" class="tablist" role="tablist" aria-label="세이브 편집 항목">
+        <button type="button" id="tab-summary" role="tab" aria-selected="true" aria-controls="panel-summary">요약 · 기본</button>
+        <button type="button" id="tab-stats" role="tab" aria-selected="false" aria-controls="panel-stats" tabindex="-1">육유 · 정통 · 생활</button>
+        <button type="button" id="tab-wuxue" role="tab" aria-selected="false" aria-controls="panel-wuxue" tabindex="-1">무학 · 초식 · 패시브</button>
+        <button type="button" id="tab-bag" role="tab" aria-selected="false" aria-controls="panel-bag" tabindex="-1">가방 · 장비 · 단방</button>
+        <button type="button" id="tab-party" role="tab" aria-selected="false" aria-controls="panel-party" tabindex="-1">동료 · 호감 · 영수</button>
+        <button type="button" id="tab-world" role="tab" aria-selected="false" aria-controls="panel-world" tabindex="-1">감오 · 특전 · 임무</button>
+      </div>
+
+      <section id="panel-summary" class="tab-panel" role="tabpanel" aria-labelledby="tab-summary"></section>
+      <section id="panel-stats" class="tab-panel" role="tabpanel" aria-labelledby="tab-stats" hidden></section>
+      <section id="panel-wuxue" class="tab-panel" role="tabpanel" aria-labelledby="tab-wuxue" hidden></section>
+      <section id="panel-bag" class="tab-panel" role="tabpanel" aria-labelledby="tab-bag" hidden></section>
+      <section id="panel-party" class="tab-panel" role="tabpanel" aria-labelledby="tab-party" hidden></section>
+      <section id="panel-world" class="tab-panel" role="tabpanel" aria-labelledby="tab-world" hidden></section>
+      <section id="panel-global" class="tab-panel" aria-label="전역 설정 편집" hidden></section>
+    </main>
+  </div>
+
+  <dialog id="picker-dialog" aria-labelledby="picker-title">
+    <div class="dialog-shell">
+      <div class="dialog-header">
+        <h2 id="picker-title">항목 선택</h2>
+      </div>
+      <div class="dialog-body">
+        <input type="search" id="picker-search" placeholder="이름 또는 식별자로 검색..." aria-label="목록 검색">
+        <div id="picker-list" class="picker-list" role="listbox" aria-label="선택 가능한 항목"></div>
+      </div>
+      <div class="dialog-footer">
+        <form method="dialog">
+          <button type="submit" id="picker-close" class="btn" value="close">닫기</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- INLINE_SCRIPTS -->
+  <script src="jingu-codec.js"></script>
+  <script src="catalog-data.js"></script>
+  <script src="editor-core.js"></script>
+  <script src="editor-ui.js"></script>
+</body>
+</html>

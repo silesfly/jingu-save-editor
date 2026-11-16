@@ -1,0 +1,17 @@
+*.bytes
+*.sav
+*.bak
+*.pending-*
+*.lock
+*.tmp
+HANDOFF*.md
+dist/*.exe
+dist/*.dll
+dist/*.zip
+dist/WebView2-LICENSE.txt
+dist/SHA256SUMS.txt
+SHA256SUMS.txt
+receipt.json
+__pycache__/
+*.pyc
+.playwright-mcp/
