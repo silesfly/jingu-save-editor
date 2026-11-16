@@ -323,6 +323,22 @@ namespace JinGuSaveEditor.Tests
                         Console.WriteLine("  [INFO] No args[0] provided; real save read skipped.");
                     }
                 });
+
+                RunTest("16. ValidateSaveBytes rejects malformed JSON containing expected keys", delegate
+                {
+                    string badJson = "{\"m_equips\":[1,2,\"m_itemDic\",\"m_effectDic\"";
+                    byte[] encBad = EncryptBytes(Encoding.UTF8.GetBytes(badJson));
+                    bool threw = false;
+                    try
+                    {
+                        SaveStore.ValidateSaveBytes(encBad);
+                    }
+                    catch (InvalidDataException)
+                    {
+                        threw = true;
+                    }
+                    Assert(threw, "Expected InvalidDataException for malformed JSON containing key literals.");
+                });
             }
             finally
             {

@@ -48,7 +48,8 @@
 
   var META_MAP = {
     leaderFamily: 'm_leaderFamily', leaderName: 'm_leaderName',
-    saveName: 'm_name', diffucultEnum: 'm_diffucultEnum',
+    saveName: 'm_name', name: 'm_name',
+    diffucultEnum: 'm_diffucultEnum', difficulty: 'm_diffucultEnum',
     scene: 'm_scene', turn: 'm_turn', tiLi: 'm_tiLi',
     gameTime: 'm_gameTime', realTime: 'm_realTime',
     yangCheng: 'm_yangCheng', hp: 'm_hp', mp: 'm_mp',
@@ -568,10 +569,16 @@
       out.sort(function(x, y) { return x.id - y.id; });
       return out;
     }
-    function getMoney() { return getEffect(10001); }
-    function setMoney(n) { return setEffect(10001, Math.max(0, Math.trunc(Number(n) || 0))); }
-    function getComprehensionPoints() { return getEffect(10002); }
-    function setComprehensionPoints(n) { return setEffect(10002, Math.max(0, Math.trunc(Number(n) || 0))); }
+    function getMoney() {
+      var v = getDictValue('m_itemDic', 10001);
+      return v === undefined ? 0 : toInt(v, 0);
+    }
+    function setMoney(n) { return setItemCount(10001, Math.max(0, Math.trunc(Number(n) || 0))); }
+    function getComprehensionPoints() {
+      var v = getDictValue('m_itemDic', 10002);
+      return v === undefined ? 0 : toInt(v, 0);
+    }
+    function setComprehensionPoints(n) { return setItemCount(10002, Math.max(0, Math.trunc(Number(n) || 0))); }
 
     function getEquips() {
       var a = top('m_equips', 'arr');
@@ -588,7 +595,12 @@
       if (id > 0) {
         var e = findCatalogEntry(state.catalog, id, ['items', 'equips', 'itemList', 'allItems']);
         if (!e) throw new Error('존재하지 않는 장비 번호입니다.');
-        if (entryType2(e) === 0) throw new Error('장비 종류를 확인할 수 없습니다.');
+        var t2 = entryType2(e);
+        if (t2 === 0) throw new Error('장비 종류를 확인할 수 없습니다.');
+        if (s === 0 && !(t2 >= 2 && t2 <= 7)) throw new Error('무기 슬롯(0)에는 무기류(type2 2~7)만 장착할 수 있습니다.');
+        if (s === 1 && t2 !== 8) throw new Error('방어구 슬롯(1)에는 방어구(type2 8)만 장착할 수 있습니다.');
+        if (s === 2 && t2 !== 9) throw new Error('신발 슬롯(2)에는 신발(type2 9)만 장착할 수 있습니다.');
+        if (s === 3 && t2 !== 10) throw new Error('장신구 슬롯(3)에는 장신구(type2 10)만 장착할 수 있습니다.');
       }
       setArr(state.ast, 'm_equips', s, id, 4);
       var eq = getEquips();
@@ -663,7 +675,12 @@
     }
     function setWuXueExp(id, exp) {
       saveOrThrow();
-      var n = Math.max(0, Math.trunc(Number(exp) || 0));
+      var raw = Number(exp);
+      if (!isNaN(raw) && raw < 0) {
+        setDictValue('m_wuXueExpDic', id, undefined);
+        return -1;
+      }
+      var n = Math.max(0, Math.trunc(raw || 0));
       setDictValue('m_wuXueExpDic', id, num(n, true));
       return n;
     }
@@ -741,15 +758,19 @@
       counts.items = getDictSize('m_itemDic');
       counts.wuxue = getDictSize('m_wuXueExpDic');
       counts.trees = getHashIds('m_ganWuHash').length;
+      var saveNameVal = jgGet(a, 'm_name');
+      var diffVal = toInt(jgGet(a, 'm_diffucultEnum'), 1);
       var summary = {
         kind: kind,
         fileName: state.fileName,
-        name: jgGet(a, 'm_name'),
+        name: saveNameVal,
+        saveName: saveNameVal,
         saveTime: Codec.isJgNum(jgGet(a, 'm_saveTime')) ? Codec.numRaw(jgGet(a, 'm_saveTime')) : '',
         leaderFamily: jgGet(a, 'm_leaderFamily'),
         leaderName: jgGet(a, 'm_leaderName'),
         leaderDirection: toInt(jgGet(a, 'm_leaderDirection'), 6),
-        difficulty: toInt(jgGet(a, 'm_diffucultEnum'), 1),
+        difficulty: diffVal,
+        diffucultEnum: diffVal,
         scene: toInt(jgGet(a, 'm_scene'), 0),
         turn: toInt(jgGet(a, 'm_turn'), 1),
         tiLi: toInt(jgGet(a, 'm_tiLi'), 0),
@@ -781,7 +802,7 @@
         if (p[k] === undefined) return;
         var field = META_MAP[k];
         var v = p[k];
-        if (k === 'leaderFamily' || k === 'leaderName' || k === 'saveName') {
+        if (k === 'leaderFamily' || k === 'leaderName' || k === 'saveName' || k === 'name') {
           jgSet(state.ast, field, String(v === null ? '' : v));
         } else if (k === 'yangCheng') {
           jgSet(state.ast, field, !!v);
@@ -826,8 +847,8 @@
       switch (id) {
         case 'money_rich':
           saveOrThrow();
-          setEffect(10001, 100000000);
-          setEffect(10002, 999);
+          setMoney(100000000);
+          setComprehensionPoints(999);
           break;
         case 'max_six_stats':
           saveOrThrow();

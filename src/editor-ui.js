@@ -15,19 +15,19 @@
   ];
 
   var ACTIVE_SKILL_FIELDS = [
-    { field: 'm_daoActives', label: '도법 초식 (6칸)' },
-    { field: 'm_jianActives', label: '검법 초식 (6칸)' },
-    { field: 'm_quanActives', label: '권장 초식 (6칸)' },
-    { field: 'm_qiangActives', label: '창법 초식 (6칸)' },
-    { field: 'm_anqiActives', label: '암기 초식 (6칸)' },
-    { field: 'm_qinActives', label: '음률 초식 (6칸)' }
+    { field: 'm_daoActives', label: '도법 초식 (6칸)', wuxueType: 1 },
+    { field: 'm_jianActives', label: '검법 초식 (6칸)', wuxueType: 2 },
+    { field: 'm_quanActives', label: '권장 초식 (6칸)', wuxueType: 3 },
+    { field: 'm_qiangActives', label: '창법 초식 (6칸)', wuxueType: 4 },
+    { field: 'm_anqiActives', label: '암기 초식 (6칸)', wuxueType: 5 },
+    { field: 'm_qinActives', label: '음률 초식 (6칸)', wuxueType: 6 }
   ];
 
   var EQUIP_SLOTS = [
-    { slot: 0, label: '무기', type2: 1 },
-    { slot: 1, label: '방어구', type2: 2 },
-    { slot: 2, label: '신발', type2: 3 },
-    { slot: 3, label: '장신구', type2: 4 }
+    { slot: 0, label: '무기', minType2: 2, maxType2: 7 },
+    { slot: 1, label: '방어구', type2: 8 },
+    { slot: 2, label: '신발', type2: 9 },
+    { slot: 3, label: '장신구', type2: 10 }
   ];
 
   var STAT_GROUPS = [
@@ -98,12 +98,22 @@
     { field: 'm_wuXueHash', label: '무학 도감', catalogKey: 'wuxue' },
     { field: 'm_danFangHash', label: '단방 도감', catalogKey: 'danFang' },
     { field: 'm_daZaoHash', label: '단조 도감', catalogKey: 'daZao' },
-    { field: 'm_guideHash', label: '강호 지남', catalogKey: 'guides' },
-    { field: 'm_propHash', label: '소모품 도감', catalogKey: 'props' },
-    { field: 'm_matHash', label: '재료 도감', catalogKey: 'mats' },
-    { field: 'm_fishHash', label: '어류 도감', catalogKey: 'fishes' },
-    { field: 'm_huntHash', label: '수렵 도감', catalogKey: 'hunts' }
+    { field: 'm_guideHash', label: '강호 지남', catalogKey: null, readOnly: true },
+    { field: 'm_propHash', label: '전투 도구 도감', itemType2: 14 },
+    { field: 'm_matHash', label: '재료 도감', itemType2: 15 },
+    { field: 'm_fishHash', label: '어류 도감', itemType2: 20 },
+    { field: 'm_huntHash', label: '수렵 도감', itemType2: 21 }
   ];
+
+  function getGlobalHashCatalog(def) {
+    if (!def || def.readOnly || def.catalogKey === null) return [];
+    if (def.itemType2 !== undefined) {
+      return toList(Catalog.items).filter(function (it) {
+        return it && it.type2 === def.itemType2;
+      });
+    }
+    return def.catalogKey ? toList(Catalog[def.catalogKey]) : [];
+  }
 
   var state = {
     session: null,
@@ -437,6 +447,10 @@
       state.session = session;
       state.fileName = session.getFileName() || fileName || 'save.bytes';
       state.dirty = false;
+      state.nativePath = '';
+      state.nativeSha256 = '';
+      state.serverLoadedName = '';
+      state.serverSha256 = '';
 
       if (sourceInfo && sourceInfo.nativePath !== undefined) {
         state.nativePath = sourceInfo.nativePath || '';
@@ -459,6 +473,8 @@
     var workspace = $('editor-workspace');
     var tablist = $('save-tablist');
     var globalPanel = $('panel-global');
+    var btnDownload = $('btn-download-save');
+    if (btnDownload) btnDownload.disabled = !state.session;
 
     updateHeader();
 
@@ -603,24 +619,41 @@
 
     var summary = state.session.getSummary() || {};
     var metaFields = [
-      { key: 'm_name', label: '세이브 이름', type: 'text' },
-      { key: 'm_leaderFamily', label: '주인공 성씨', type: 'text' },
-      { key: 'm_leaderName', label: '주인공 이름', type: 'text' },
-      { key: 'm_leaderDirection', label: '성향 / 노선', type: 'number' },
-      { key: 'm_diffucultEnum', label: '난이도', type: 'number' },
-      { key: 'm_scene', label: '현재 씬 ID', type: 'number' },
-      { key: 'm_turn', label: '진행 턴', type: 'number' },
-      { key: 'm_tiLi', label: '체력', type: 'number' },
-      { key: 'm_hp', label: '현재 생명(HP)', type: 'number' },
-      { key: 'm_mp', label: '현재 내력(MP)', type: 'number' },
-      { key: 'm_jingLi', label: '현재 정력', type: 'number' },
-      { key: 'm_yangCheng', label: '양성 포인트', type: 'number' },
-      { key: 'm_fishRob', label: '낚싯대 등급', type: 'number' },
-      { key: 'm_huntBow', label: '사냥 활 등급', type: 'number' }
+      { key: 'saveName', label: '세이브 이름', type: 'text' },
+      { key: 'leaderFamily', label: '주인공 성씨', type: 'text' },
+      { key: 'leaderName', label: '주인공 이름', type: 'text' },
+      { key: 'leaderDirection', label: '성향 / 노선', type: 'number' },
+      { key: 'diffucultEnum', label: '난이도', type: 'number' },
+      { key: 'scene', label: '현재 씬 ID', type: 'number' },
+      { key: 'turn', label: '진행 턴', type: 'number' },
+      { key: 'tiLi', label: '체력', type: 'number' },
+      { key: 'hp', label: '현재 생명(HP)', type: 'number' },
+      { key: 'mp', label: '현재 내력(MP)', type: 'number' },
+      { key: 'jingLi', label: '현재 정력', type: 'number' },
+      { key: 'yangCheng', label: '양성 모드', type: 'checkbox' },
+      { key: 'fishRob', label: '낚싯대 등급', type: 'number' },
+      { key: 'huntBow', label: '사냥 활 등급', type: 'number' }
     ];
 
     var metaGrid = el('div', { className: 'form-grid' });
     metaFields.forEach(function (mf) {
+      if (mf.type === 'checkbox') {
+        metaGrid.appendChild(el('label', { className: 'field' }, [
+          el('span', { className: 'field-label', textContent: mf.label }),
+          el('input', {
+            type: 'checkbox',
+            checked: Boolean(summary[mf.key]),
+            onChange: function (e) {
+              var patch = {};
+              patch[mf.key] = Boolean(e.target.checked);
+              state.session.setMeta(patch);
+              markDirty(true);
+              renderSummaryPanel();
+            }
+          })
+        ]));
+        return;
+      }
       metaGrid.appendChild(makeFieldInput(mf.label, mf.type, summary[mf.key], function (val) {
         var patch = {};
         patch[mf.key] = val;
@@ -721,7 +754,11 @@
               className: 'btn btn-slot',
               textContent: (idx + 1) + ': ' + label,
               onClick: function () {
-                var items = [{ id: 0, name: '(해제 / 비우기)', sub: '' }].concat(wuxueList.map(function (w) {
+                var filteredWuxue = wuxueList.filter(function (w) {
+                  return w && (w.type === af.wuxueType || w.type === 0);
+                });
+                var pickerWuxue = filteredWuxue.length > 0 ? filteredWuxue : wuxueList;
+                var items = [{ id: 0, name: '(해제 / 비우기)', sub: '' }].concat(pickerWuxue.map(function (w) {
                   return { id: w.id, name: w.name, sub: w.desc || '' };
                 }));
                 openPicker(af.label + ' - 슬롯 ' + (idx + 1), items, function (chosenId) {
@@ -741,17 +778,18 @@
 
     // Passives (3 slots)
     var passives = state.session.getPassives() || [];
+    var passiveList = toList(Catalog.passives);
     var passiveRow = el('div', { className: 'slot-row' });
     for (var p = 0; p < 3; p++) {
       (function (idx) {
         var pid = passives[idx] || 0;
-        var label = pid ? entryName(Catalog.wuxue, pid, '심법') : '(비어 있음)';
+        var label = pid ? entryName(Catalog.passives, pid, '심법') : '(비어 있음)';
         passiveRow.appendChild(el('button', {
           type: 'button',
           className: 'btn btn-slot',
           textContent: '심법 ' + (idx + 1) + ': ' + label,
           onClick: function () {
-            var items = [{ id: 0, name: '(해제 / 비우기)', sub: '' }].concat(wuxueList.map(function (w) {
+            var items = [{ id: 0, name: '(해제 / 비우기)', sub: '' }].concat(passiveList.map(function (w) {
               return { id: w.id, name: w.name, sub: w.desc || '' };
             }));
             openPicker('장착 심법 - 슬롯 ' + (idx + 1), items, function (chosenId) {
@@ -875,7 +913,10 @@
         textContent: es.label + ': ' + label,
         onClick: function () {
           var filtered = allItems.filter(function (it) {
-            return it.type2 === undefined || it.type2 === es.type2;
+            if (!it) return false;
+            return es.minType2 !== undefined
+              ? (it.type2 >= es.minType2 && it.type2 <= es.maxType2)
+              : (it.type2 === es.type2);
           });
           var pickerItems = [{ id: 0, name: '(장비 해제)', sub: '' }].concat(filtered.map(function (it) {
             return { id: it.id, name: it.name, sub: it.desc || '' };
@@ -1129,9 +1170,10 @@
     var friends = toList(Catalog.friends);
     var friendGrid = el('div', { className: 'form-grid' });
     friends.forEach(function (f) {
-      var val = state.session.getDictValue('m_friendLvDic', f.id);
-      friendGrid.appendChild(makeFieldInput((f.name || ('지인 #' + f.id)) + ' (#' + f.id + ')', 'number', val, function (nextVal) {
-        state.session.setDictValue('m_friendLvDic', f.id, nextVal);
+      var fid = f.npcId !== undefined ? f.npcId : f.id;
+      var val = state.session.getDictValue('m_friendLvDic', fid);
+      friendGrid.appendChild(makeFieldInput((f.name || ('지인 #' + fid)) + ' (#' + fid + ')', 'number', val, function (nextVal) {
+        state.session.setDictValue('m_friendLvDic', fid, nextVal);
         markDirty(true);
       }));
     });
@@ -1144,9 +1186,10 @@
     var animals = toList(Catalog.animals);
     var animalGrid = el('div', { className: 'form-grid' });
     animals.forEach(function (a) {
-      var val = state.session.getDictValue('m_animalExpDic', a.id);
-      animalGrid.appendChild(makeFieldInput((a.name || ('영수 #' + a.id)) + ' (#' + a.id + ')', 'number', val, function (nextVal) {
-        state.session.setDictValue('m_animalExpDic', a.id, nextVal);
+      var aid = a.npcId !== undefined ? a.npcId : a.id;
+      var val = state.session.getDictValue('m_animalExpDic', aid);
+      animalGrid.appendChild(makeFieldInput((a.name || ('영수 #' + aid)) + ' (#' + aid + ')', 'number', val, function (nextVal) {
+        state.session.setDictValue('m_animalExpDic', aid, nextVal);
         markDirty(true);
       }));
     });
@@ -1162,7 +1205,7 @@
     clearNode(panel);
 
     // 80 GanWu nodes grouped by treeGroups 1..5
-    var ganWuList = toList(Catalog.ganWu);
+    var ganWuList = toList(Catalog.trees || Catalog.ganWu);
     var ownedGanWu = new Set((state.session.getHashIds('m_ganWuHash') || []).map(String));
     var treeGroups = Catalog.treeGroups || {
       1: '감오 계통 1',
@@ -1244,21 +1287,32 @@
       el('button', {
         type: 'button',
         className: 'btn btn-primary',
-        textContent: '모든 도감 10종 전체 해금',
+        textContent: '카탈로그 지원 도감 전체 해금',
         onClick: function () {
           GLOBAL_HASH_DEFS.forEach(function (def) {
-            var entries = toList(Catalog[def.catalogKey]);
+            if (def.readOnly) return;
+            var entries = getGlobalHashCatalog(def);
+            if (!entries.length) return;
             state.session.setHashIds(def.field, entries.map(function (e) { return e.id; }));
           });
           markDirty(true);
           renderGlobalPanel();
-          setStatus('전역 도감 10종 전체 해금 완료', false);
+          setStatus('카탈로그 지원 전역 도감 해금 완료 (강호 지남은 기존 ID 보존)', false);
         }
       })
     ]));
 
     GLOBAL_HASH_DEFS.forEach(function (def) {
-      panel.appendChild(renderHashGridCard(def.label + ' (' + def.field + ')', def.field, Catalog[def.catalogKey], def.label));
+      if (def.readOnly) {
+        var curIds = state.session.getHashIds(def.field) || [];
+        panel.appendChild(el('section', { className: 'card' }, [
+          el('h3', { textContent: def.label + ' (' + def.field + ', 현재 ' + curIds.length + '건 보존)' }),
+          el('div', { className: 'empty-hint', textContent: '정적 카탈로그가 없는 항목으로, 기존 세이브의 ID 목록을 변경하지 않고 보존합니다.' })
+        ]));
+        return;
+      }
+      var catalogEntries = getGlobalHashCatalog(def);
+      panel.appendChild(renderHashGridCard(def.label + ' (' + def.field + ')', def.field, catalogEntries, def.label));
     });
   }
 
@@ -1435,6 +1489,7 @@
           var dataB64 = u8ToBase64(state.session.saveBytes());
           postNative({
             cmd: 'saveAs',
+            path: state.nativePath,
             suggestName: state.fileName,
             suggestPath: state.nativePath,
             expectedHash: state.nativeSha256,
@@ -1542,11 +1597,22 @@
           setStatus('저장할 서버 대상 파일이 없습니다.', true);
           return;
         }
-        if (state.serverLoadedName && targetPath !== state.serverLoadedName) {
+        if (!state.serverLoadedName) {
+          var okDemo = window.confirm(
+            '현재 편집 중인 세션(' + (state.fileName || '로컬 파일') + ')은 서버에서 불러온 파일이 아닙니다. 선택한 서버 파일(' + targetPath + ')에 덮어쓰시겠습니까?'
+          );
+          if (!okDemo) {
+            setStatus('서버 덮어쓰기가 취소되었습니다.', false);
+            return;
+          }
+        } else if (targetPath !== state.serverLoadedName) {
           var ok = window.confirm(
             '현재 불러온 파일(' + state.serverLoadedName + ')과 다른 대상(' + targetPath + ')에 덮어쓰시겠습니까?'
           );
-          if (!ok) return;
+          if (!ok) {
+            setStatus('서버 덮어쓰기가 취소되었습니다.', false);
+            return;
+          }
         }
         try {
           var rawBase64 = u8ToBase64(state.session.saveBytes());

@@ -221,7 +221,32 @@ function run() {
 
   const reimportedSession = openEditorSession(EditorCore, session.saveBytes(), C, 'reimported.bytes');
   assert.strictEqual(reimportedSession.validate().ok, true);
-  pass('5. SaveData session (meta, stats, items, equips, party, wuxue, skills, presets, validate, diff)');
+
+  // P1/P2 Regression checks: m_itemDic money, equip type2 guard, setWuXueExp delete
+  const regSess = openEditorSession(EditorCore, demoBytes, C, 'reg.bytes');
+  regSess.setMoney(555);
+  regSess.applyPreset('money_rich');
+  const regJson = JSON.parse(nodeDecryptToUtf8(regSess.saveBytes()));
+  const itemKeys = regJson.m_itemDic.m_Keys;
+  const itemVals = regJson.m_itemDic.m_Values;
+  const effKeys = regJson.m_effectDic.m_Keys;
+  assert.strictEqual(itemVals[itemKeys.indexOf(10001)], 100000000, 'money_rich must write 10001 to m_itemDic');
+  assert.strictEqual(itemVals[itemKeys.indexOf(10002)], 999, 'money_rich must write 10002 to m_itemDic');
+  assert.strictEqual(effKeys.indexOf(10001), -1, '10001 must NOT be written into m_effectDic');
+  assert.strictEqual(effKeys.indexOf(10002), -1, '10002 must NOT be written into m_effectDic');
+
+  const armorItem = C.equips.find((e) => e.type2 === 8);
+  assert.ok(armorItem, 'armor item (type2=8) must exist in catalog');
+  assert.throws(() => regSess.setEquip(0, armorItem.id), /type2|슬롯/, 'slot 0 must reject armor (type2=8)');
+
+  regSess.setWuXueExp(wuxueId, 777);
+  regSess.setWuXueExp(wuxueId, -1);
+  const afterDelJson = JSON.parse(nodeDecryptToUtf8(regSess.saveBytes()));
+  assert.strictEqual(afterDelJson.m_wuXueExpDic.m_Keys.indexOf(wuxueId), -1, 'setWuXueExp(-1) must delete key');
+  regSess.setMeta({ saveName: '테스트세이브', diffucultEnum: 3 });
+  assert.strictEqual(regSess.getSummary().saveName, '테스트세이브', 'getSummary().saveName must match setMeta');
+  assert.strictEqual(regSess.getSummary().diffucultEnum, 3, 'getSummary().diffucultEnum must match setMeta');
+  pass('5. SaveData session (meta, stats, items, equips, party, wuxue, skills, presets, validate, diff, regressions)');
 
   const globalBytes = EditorCore.buildDemoGlobalBytes(C);
   assert.ok(globalBytes && globalBytes.length > 0, 'buildDemoGlobalBytes must return non-empty bytes');

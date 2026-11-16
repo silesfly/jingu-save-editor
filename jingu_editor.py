@@ -17,8 +17,16 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from urllib.parse import parse_qs, urlparse
 import webbrowser
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover
+    fcntl = None
+
+_WRITE_LOCK = threading.Lock()
 
 APP_NAME = "금고군협전 세이브 에디터"
 APP_VERSION = "1.0"
@@ -706,6 +714,9 @@ def validate_data(data: dict) -> list:
             if not isinstance(val, dict) or not isinstance(val.get("m_Keys"), list):
                 errors.append(f"해시셋 필드 형식이 올바르지 않습니다: {field}")
 
+    if "m_yangCheng" in data and not isinstance(data["m_yangCheng"], bool):
+        errors.append("불리언 필드 형식이 올바르지 않습니다: m_yangCheng")
+
     return errors
 
 
@@ -840,45 +851,63 @@ def write_encrypted_json(path, data: dict, expected_sha256: str = None) -> dict:
         raise RuntimeError("게임(JinGu.exe)이 실행 중입니다. 세이브 손상을 방지하기 위해 게임을 먼저 종료해 주세요.")
 
     p = safe_path(path, require_ext=True, for_write=True)
-    p.parent.mkdir(parents=True, exist_ok=True)
-
     plaintext = serialize_json_bytes(data)
     encrypted = encrypt_bytes(plaintext)
     if len(encrypted) > MAX_SAVE_BYTES:
         raise ValueError(f"저장할 파일 크기가 제한({MAX_SAVE_BYTES}바이트)을 초과했습니다.")
 
-    backup_path = None
-    if p.exists():
-        old_bytes = p.read_bytes()
-        old_sha = compute_sha256(old_bytes)
-        if expected_sha256 and old_sha.lower() != expected_sha256.lower():
-            raise ValueError("파일이 외부에서 변경되었습니다(SHA-256 불일치). 다시 불러온 뒤 저장해 주세요.")
-        ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        rand_hex = secrets.token_hex(3)
-        backup_name = f"{p.name}.backup-{ts}-{rand_hex}.bak"
-        backup_path = p.with_name(backup_name)
-        with open(backup_path, "wb") as bf:
-            bf.write(old_bytes)
-            bf.flush()
-            os.fsync(bf.fileno())
-        verify_sha = compute_sha256(backup_path.read_bytes())
-        if verify_sha != old_sha:
-            raise IOError("백업 파일 SHA-256 무결성 검증에 실패했습니다.")
+    lock_key = hashlib.sha256(str(p).encode("utf-8")).hexdigest()[:16]
+    lock_path = Path(tempfile.gettempdir()) / f"jingu-write-{lock_key}.lock"
 
-    fd, tmp_name = tempfile.mkstemp(prefix=f".{p.name}.tmp-", dir=str(p.parent))
-    try:
-        with os.fdopen(fd, "wb") as tf:
-            tf.write(encrypted)
-            tf.flush()
-            os.fsync(tf.fileno())
-        os.replace(tmp_name, p)
-    except Exception:
+    with _WRITE_LOCK:
+        lock_file = None
         try:
-            if os.path.exists(tmp_name):
-                os.unlink(tmp_name)
-        except OSError:
-            pass
-        raise
+            if fcntl is not None:
+                lock_file = open(lock_path, "a+b")
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+
+            p.parent.mkdir(parents=True, exist_ok=True)
+            backup_path = None
+            if expected_sha256 and not p.exists():
+                raise FileNotFoundError("SHA-256 검증 대상 파일이 존재하지 않습니다.")
+
+            if p.exists():
+                old_bytes = p.read_bytes()
+                old_sha = compute_sha256(old_bytes)
+                if expected_sha256 and old_sha.lower() != expected_sha256.lower():
+                    raise ValueError("파일이 외부에서 변경되었습니다(SHA-256 불일치). 다시 불러온 뒤 저장해 주세요.")
+                ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+                rand_hex = secrets.token_hex(3)
+                backup_name = f"{p.name}.backup-{ts}-{rand_hex}.bak"
+                backup_path = p.with_name(backup_name)
+                with open(backup_path, "wb") as bf:
+                    bf.write(old_bytes)
+                    bf.flush()
+                    os.fsync(bf.fileno())
+                verify_sha = compute_sha256(backup_path.read_bytes())
+                if verify_sha != old_sha:
+                    raise IOError("백업 파일 SHA-256 무결성 검증에 실패했습니다.")
+
+            fd, tmp_name = tempfile.mkstemp(prefix=f".{p.name}.tmp-", dir=str(p.parent))
+            try:
+                with os.fdopen(fd, "wb") as tf:
+                    tf.write(encrypted)
+                    tf.flush()
+                    os.fsync(tf.fileno())
+                os.replace(tmp_name, p)
+            except Exception:
+                try:
+                    if os.path.exists(tmp_name):
+                        os.unlink(tmp_name)
+                except OSError:
+                    pass
+                raise
+        finally:
+            if lock_file is not None:
+                try:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                finally:
+                    lock_file.close()
 
     new_sha = compute_sha256(encrypted)
     return {
@@ -1327,6 +1356,11 @@ class JinGuHandler(BaseHTTPRequestHandler):
 
                 info = write_encrypted_json(path, data, expected_sha256=expected_sha)
                 self._send_json(HTTPStatus.OK, {"ok": True, "info": info})
+            except FileNotFoundError as exc:
+                self._send_json(HTTPStatus.CONFLICT, {"ok": False, "error": str(exc)})
+            except ValueError as exc:
+                status = HTTPStatus.CONFLICT if "SHA-256" in str(exc) else HTTPStatus.BAD_REQUEST
+                self._send_json(status, {"ok": False, "error": str(exc)})
             except Exception as exc:
                 self._send_json(HTTPStatus.BAD_REQUEST, {"ok": False, "error": str(exc)})
             return

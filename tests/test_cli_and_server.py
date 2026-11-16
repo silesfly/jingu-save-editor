@@ -339,6 +339,50 @@ class TestServerAPI(unittest.TestCase):
             new_money,
         )
 
+    def test_06_yangcheng_bool_and_concurrent_sha_guard(self):
+        bad_save = make_sample_save()
+        bad_save["m_yangCheng"] = 0
+        errs = jingu_editor.validate_data(bad_save)
+        self.assertTrue(any("m_yangCheng" in e for e in errs), f"Expected bool check error, got {errs}")
+
+        missing = Path(self.tmpdir) / "nonexistent.bytes"
+        with self.assertRaises(FileNotFoundError):
+            jingu_editor.write_encrypted_json(
+                str(missing),
+                make_sample_save(),
+                expected_sha256="0" * 64,
+            )
+
+        headers = {"X-JinGu-Token": self.token}
+        barrier = threading.Barrier(2)
+        results = []
+        results_lock = threading.Lock()
+
+        def worker(val):
+            barrier.wait()
+            st, raw = self._request(
+                "POST",
+                "/api/save",
+                body={
+                    "path": str(self.save_path),
+                    "expectedSha256": self.initial_sha256,
+                    "data": make_sample_save(money=val),
+                },
+                headers=headers,
+            )
+            with results_lock:
+                results.append((st, json.loads(raw)))
+
+        t1 = threading.Thread(target=worker, args=(777777,))
+        t2 = threading.Thread(target=worker, args=(888888,))
+        t1.start()
+        t2.start()
+        t1.join(timeout=10)
+        t2.join(timeout=10)
+
+        statuses = sorted(st for st, _ in results)
+        self.assertEqual(statuses, [200, 409], f"Expected one 200 and one 409, got {results}")
+
 
 if __name__ == "__main__":
     unittest.main()

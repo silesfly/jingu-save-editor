@@ -7,6 +7,7 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Text;
+using System.Web.Script.Serialization;
 using Microsoft.Win32.SafeHandles;
 
 namespace JinGuSaveEditor
@@ -418,14 +419,31 @@ namespace JinGuSaveEditor
                 throw new InvalidDataException("세이브 데이터가 올바른 JSON 객체 형식이 아닙니다.");
             }
 
+            Dictionary<string, object> parsed;
+            try
+            {
+                JavaScriptSerializer serializer = new JavaScriptSerializer();
+                serializer.MaxJsonLength = Math.Max(trimmed.Length, 4 * 1024 * 1024);
+                parsed = serializer.DeserializeObject(trimmed) as Dictionary<string, object>;
+            }
+            catch (ArgumentException ex)
+            {
+                throw new InvalidDataException("세이브 데이터가 올바른 JSON 객체 형식이 아닙니다.", ex);
+            }
+
+            if (parsed == null)
+            {
+                throw new InvalidDataException("세이브 데이터가 올바른 JSON 객체 형식이 아닙니다.");
+            }
+
             bool isSaveData =
-                trimmed.IndexOf("\"m_equips\"", StringComparison.Ordinal) >= 0 &&
-                trimmed.IndexOf("\"m_itemDic\"", StringComparison.Ordinal) >= 0 &&
-                trimmed.IndexOf("\"m_effectDic\"", StringComparison.Ordinal) >= 0;
+                parsed.ContainsKey("m_equips") &&
+                parsed.ContainsKey("m_itemDic") &&
+                parsed.ContainsKey("m_effectDic");
 
             bool isGlobalData =
-                trimmed.IndexOf("\"m_guideHash\"", StringComparison.Ordinal) >= 0 &&
-                trimmed.IndexOf("\"m_achieveHash\"", StringComparison.Ordinal) >= 0;
+                parsed.ContainsKey("m_guideHash") &&
+                parsed.ContainsKey("m_achieveHash");
 
             if (!isSaveData && !isGlobalData)
             {
