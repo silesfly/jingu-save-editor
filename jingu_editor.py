@@ -26,6 +26,52 @@ try:
 except ImportError:  # pragma: no cover
     fcntl = None
 
+if os.name == "nt":  # pragma: no cover - Windows
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _LOCKFILE_EXCLUSIVE_LOCK = 0x00000002
+
+    class _OVERLAPPED(ctypes.Structure):
+        _fields_ = [
+            ("Internal", ctypes.c_void_p),
+            ("InternalHigh", ctypes.c_void_p),
+            ("Offset", wintypes.DWORD),
+            ("OffsetHigh", wintypes.DWORD),
+            ("hEvent", wintypes.HANDLE),
+        ]
+
+    _kernel32.LockFileEx.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(_OVERLAPPED),
+    ]
+    _kernel32.LockFileEx.restype = wintypes.BOOL
+    _kernel32.UnlockFileEx.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.POINTER(_OVERLAPPED),
+    ]
+    _kernel32.UnlockFileEx.restype = wintypes.BOOL
+
+    def _lock_file_windows(lock_file):
+        handle = wintypes.HANDLE(msvcrt.get_osfhandle(lock_file.fileno()))
+        overlapped = _OVERLAPPED()
+        if not _kernel32.LockFileEx(handle, _LOCKFILE_EXCLUSIVE_LOCK, 0, 1, 0, ctypes.byref(overlapped)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return handle, overlapped
+
+    def _unlock_file_windows(handle, overlapped):
+        if not _kernel32.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlapped)):
+            raise ctypes.WinError(ctypes.get_last_error())
+
 _WRITE_LOCK = threading.Lock()
 
 APP_NAME = "금고군협전 세이브 에디터"
@@ -861,10 +907,14 @@ def write_encrypted_json(path, data: dict, expected_sha256: str = None) -> dict:
 
     with _WRITE_LOCK:
         lock_file = None
+        windows_lock = None
         try:
             if fcntl is not None:
                 lock_file = open(lock_path, "a+b")
                 fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            elif os.name == "nt":
+                lock_file = open(lock_path, "a+b")
+                windows_lock = _lock_file_windows(lock_file)
 
             p.parent.mkdir(parents=True, exist_ok=True)
             backup_path = None
@@ -905,7 +955,10 @@ def write_encrypted_json(path, data: dict, expected_sha256: str = None) -> dict:
         finally:
             if lock_file is not None:
                 try:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    if fcntl is not None:
+                        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    elif windows_lock is not None:
+                        _unlock_file_windows(*windows_lock)
                 finally:
                     lock_file.close()
 

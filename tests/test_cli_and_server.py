@@ -383,6 +383,49 @@ class TestServerAPI(unittest.TestCase):
         statuses = sorted(st for st, _ in results)
         self.assertEqual(statuses, [200, 409], f"Expected one 200 and one 409, got {results}")
 
+    def test_07_multiprocess_write_lock_conflict(self):
+        import time
+
+        target = Path(self.tmpdir) / "mp_race.bytes"
+        seed = make_sample_save(money=100)
+        seed_info = jingu_editor.write_encrypted_json(str(target), seed)
+        go_flag = Path(self.tmpdir) / "go.flag"
+
+        child_code = "\n".join([
+            "import pathlib, sys, time",
+            f"sys.path.insert(0, {str(ROOT_DIR)!r})",
+            "import jingu_editor",
+            "go = pathlib.Path(sys.argv[1])",
+            "while not go.exists():",
+            "    time.sleep(0.01)",
+            "data = jingu_editor.default_save_data()",
+            "jingu_editor.sdict_set(data['m_itemDic'], 10001, int(sys.argv[4]))",
+            "jingu_editor.write_encrypted_json(sys.argv[2], data, expected_sha256=sys.argv[3])",
+            "print('OK')",
+        ])
+        p1 = subprocess.Popen(
+            [sys.executable, "-c", child_code, str(go_flag), str(target), seed_info["sha256"], "111"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        p2 = subprocess.Popen(
+            [sys.executable, "-c", child_code, str(go_flag), str(target), seed_info["sha256"], "222"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        time.sleep(0.15)
+        go_flag.write_text("1", encoding="utf-8")
+        out1, err1 = p1.communicate(timeout=15)
+        out2, err2 = p2.communicate(timeout=15)
+
+        rcs = sorted([p1.returncode, p2.returncode])
+        self.assertEqual(rcs, [0, 1], f"Expected one 0 and one 1, got rc1={p1.returncode} ({err1}), rc2={p2.returncode} ({err2})")
+        dec = jingu_editor.decrypt_bytes(target.read_bytes())
+        final_obj = json.loads(dec.decode("utf-8-sig"), object_pairs_hook=OrderedDict)
+        self.assertIn(jingu_editor.sdict_get(final_obj["m_itemDic"], 10001, 0), (111, 222))
+
 
 if __name__ == "__main__":
     unittest.main()
